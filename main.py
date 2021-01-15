@@ -8,16 +8,19 @@ from control_group import ControlGroup
 
 # Control number range of faders to use
 CONST_FADER_RANGE = range(0, 4)
-# Control number of select buttons to use
+# Control number range of select buttons to use
 CONST_SELECT_RANGE = range(32, 36)
+# Control number range of mute buttons
+CONST_MUTE_RANGE = range(48, 52)
 # Difference between fader and select control numbers
 CONST_SELECT_FADER_DIFF = 32
+# Difference between fader and mute control numbers
+CONST_MUTE_FADER_DIFF = CONST_SELECT_FADER_DIFF + 16
 
 
 def main():
     nk2 = mido.open_input('nanoKONTROL2 1 SLIDER/KNOB 0')
     sessions = AudioUtilities.GetAllSessions
-    bindings = {}
 
     # Dictionary to hold ControlGroup objects
     control_groups = {}
@@ -45,22 +48,49 @@ def main():
 
         # select button pressed, on keyrelease
         if msg.control in CONST_SELECT_RANGE and msg.value == 0:
-            selected_group = control_groups[msg.control - CONST_SELECT_FADER_DIFF]
+            group = control_groups[msg.control - CONST_SELECT_FADER_DIFF]
 
             # If program bound to group, unbind and turn off light
-            if selected_group.program != "":
-                print(f"{selected_group.program} unbound from fader {selected_group.fader}")
-                selected_group.program = ""
-                disable_light(msg.control)
+            if group.program != "":
+                print(f"{group.program} unbound from fader {group.fader}")
+                group.program = ""
+
+                # Disable select button light
+                disable_light(group.select)
+                # Disable mute button light
+                disable_light(group.mute)
             else:
+                # Get active program to
                 active_exe = get_active_program()
-
                 # Assign active window to ControlGroup object in dict
-                selected_group.program = active_exe
+                group.program = active_exe
 
-                enable_light(msg.control)
+                # Enable select button light
+                enable_light(group.select)
 
-                print(f"{active_exe} bound to fader {selected_group.fader}")
+                # Enable mute button light if program is muted
+                if group.isMuted:
+                    enable_light(group.mute)
+
+                print(f"{active_exe} bound to fader {group.fader}")
+
+        # Check for mute button press
+        elif msg.control in CONST_MUTE_RANGE and msg.value == 0 and control_groups[msg.control - CONST_MUTE_FADER_DIFF].program:
+            group = control_groups[msg.control - CONST_MUTE_FADER_DIFF]
+
+            session = next(
+                (s for s in sessions() if s.Process and s.Process.name() == group.program), None)
+
+            if session.SimpleAudioVolume.GetMute():
+                session.SimpleAudioVolume.SetMute(0, None)
+                disable_light(group.mute)
+                group.isMuted = False
+                print(f"{group.program} unmuted (fader {group.fader})")
+            else:
+                session.SimpleAudioVolume.SetMute(1, None)
+                enable_light(group.mute)
+                group.isMuted = True
+                print(f"{group.program} muted (fader {group.fader})")
 
         # Check if key matching a fader input exists
         elif msg.control in control_groups:
@@ -110,7 +140,11 @@ def disable_light(control):
 # Turn off lights for all controls
 def reset_lights():
     with mido.open_output('nanoKONTROL2 1 CTRL 1') as outport:
-        for i in range(32, 36):
+        for i in CONST_SELECT_RANGE:
+            out_msg = mido.Message('control_change', control=i, value=0)
+            outport.send(out_msg)
+
+        for i in CONST_MUTE_RANGE:
             out_msg = mido.Message('control_change', control=i, value=0)
             outport.send(out_msg)
 
