@@ -3,8 +3,14 @@ import psutil
 import win32process
 from pycaw.pycaw import AudioUtilities, ISimpleAudioVolume
 import win32gui
+import voicemeeter
 
 from control_group import ControlGroup
+
+# NOTE: Voicemeeter library error -
+# Edit remote.py line 172
+# from  def connect(kind_id, delay=null):
+# to    def connect(kind_id, delay=None):
 
 # Control number range of faders to use
 CONST_FADER_RANGE = range(0, 4)
@@ -17,10 +23,24 @@ CONST_SELECT_FADER_DIFF = 32
 # Difference between fader and mute control numbers
 CONST_MUTE_FADER_DIFF = CONST_SELECT_FADER_DIFF + 16
 
+# Control number range of faders for Voicemeeter
+CONST_VB_FADER_RANGE = range(4, 8)
+# Control number range of mute buttons for Voicemeeter
+CONST_VB_MUTE_RANGE = range(52, 56)
+
 
 def main():
     nk2 = mido.open_input('nanoKONTROL2 1 SLIDER/KNOB 0')
     sessions = AudioUtilities.GetAllSessions
+
+    # Map physical faders to Voicemeeter faders - mappings subject to personal preference
+    with voicemeeter.remote('banana', 0.0005) as vmr:
+        vb_map = {
+            4: vmr.inputs[3],
+            5: vmr.inputs[4],
+            6: vmr.inputs[1],
+            7: vmr.outputs[0]
+        }
 
     # Dictionary to hold ControlGroup objects
     control_groups = {}
@@ -28,8 +48,6 @@ def main():
     # Populate dict using fader control number for key
     for i in CONST_FADER_RANGE:
         control_groups[i] = ControlGroup(i)
-
-    # print(control_groups)
 
     reset_lights()
 
@@ -42,11 +60,11 @@ def main():
         # Receive midi message (non-blocking)
         msg = nk2.poll()
 
-        # If no message exists,
+        # If no message exists, end current loop
         if not msg:
             continue
 
-        # select button pressed, on keyrelease
+        # Check for select button press
         if msg.control in CONST_SELECT_RANGE and msg.value:
             group = control_groups[msg.control - CONST_SELECT_FADER_DIFF]
 
@@ -102,7 +120,7 @@ def main():
 
                 print(f"{group.program.Process.name()} muted (fader {group.fader})")
 
-        # Check if key matching a fader input exists
+        # Check for fader input
         elif msg.control in CONST_FADER_RANGE:
             group = control_groups[msg.control]
 
@@ -116,6 +134,36 @@ def main():
             volume.SetMasterVolume(msg.value / 127, None)
 
             print(f"{group.program.Process.name()} set to {volume.GetMasterVolume() * 100}%")
+
+        # Check for Voicemeeter fader input
+        elif msg.control in CONST_VB_FADER_RANGE:
+            # Map midi value (0-127) to VB appropriate gain value (-60-0)
+            level = ((127 - msg.value) / 127) * -60
+            # Set VB fader gain
+            vb_map[msg.control].gain = level
+
+            print(f"fader {msg.control} (VoiceMeeter) gain set to {level}")
+
+        elif msg.control in CONST_VB_MUTE_RANGE and msg.value:
+            fader = msg.control - CONST_MUTE_FADER_DIFF
+            control = vb_map[fader]
+
+            # ISSUE: inconsistent mute/unmute
+
+            if control.mute:
+                # Unmute VB control
+                control.mute = False
+                # Turn off mute button light
+                disable_light(msg.control)
+
+                print(f"fader {fader} (VoiceMeeter) unmuted")
+            else:
+                # Mute FB control
+                control.mute = True
+                # Turn on mute button light
+                enable_light(msg.control)
+
+                print(f"fader {fader} (VoiceMeeter) muted")
 
         # After input is processed delete message to prevent unnecessary looping
         msg = None
