@@ -47,70 +47,75 @@ def main():
             continue
 
         # select button pressed, on keyrelease
-        if msg.control in CONST_SELECT_RANGE and msg.value == 0:
+        if msg.control in CONST_SELECT_RANGE and msg.value:
             group = control_groups[msg.control - CONST_SELECT_FADER_DIFF]
 
-            # If program bound to group, unbind and turn off light
-            if group.program != "":
-                print(f"{group.program} unbound from fader {group.fader}")
-                group.program = ""
+            # If program is not bound bound
+            if not group.program:
+                # Get active program name
+                active_program = get_active_program()
+                # Find audio session with matching name
+                session = next(
+                    (s for s in sessions() if s.Process and s.Process.name() == active_program), None)
+                # Assign session to control group
+                group.program = session
 
-                # Disable select button light
-                disable_light(group.select)
-                # Disable mute button light
-                disable_light(group.mute)
-            else:
-                # Get active program to
-                active_exe = get_active_program()
-                # Assign active window to ControlGroup object in dict
-                group.program = active_exe
-
-                # Enable select button light
+                # Turn on select button light
                 enable_light(group.select)
 
-                # Enable mute button light if program is muted
-                if group.isMuted:
+                # If program is muted turn on mute button light
+                if group.program.SimpleAudioVolume.GetMute():
                     enable_light(group.mute)
 
-                print(f"{active_exe} bound to fader {group.fader}")
+                print(f"{group.program.Process.name()} bound to fader {group.fader}")
+
+            else:
+                print(f"{group.program.Process.name()} unbound from fader {group.fader}")
+
+                # Unassign session from fader
+                group.program = None
+
+                # Turn off select button light
+                disable_light(group.select)
+                # Turn off mute button light
+                disable_light(group.mute)
 
         # Check for mute button press
-        elif msg.control in CONST_MUTE_RANGE and msg.value == 0 and control_groups[msg.control - CONST_MUTE_FADER_DIFF].program:
+        elif msg.control in CONST_MUTE_RANGE and msg.value and control_groups[msg.control - CONST_MUTE_FADER_DIFF].program:
             group = control_groups[msg.control - CONST_MUTE_FADER_DIFF]
 
-            session = next(
-                (s for s in sessions() if s.Process and s.Process.name() == group.program), None)
-
-            if session.SimpleAudioVolume.GetMute():
-                session.SimpleAudioVolume.SetMute(0, None)
+            # Check if program is muted
+            if group.program.SimpleAudioVolume.GetMute():
+                # Unmute program
+                group.program.SimpleAudioVolume.SetMute(0, None)
+                # Turn off mute button light
                 disable_light(group.mute)
-                group.isMuted = False
-                print(f"{group.program} unmuted (fader {group.fader})")
+
+                print(f"{group.program.Process.name()} unmuted (fader {group.fader})")
+
+            # If program is not muted
             else:
-                session.SimpleAudioVolume.SetMute(1, None)
+                # Mute program
+                group.program.SimpleAudioVolume.SetMute(1, None)
+                # Turn on mute button light
                 enable_light(group.mute)
-                group.isMuted = True
-                print(f"{group.program} muted (fader {group.fader})")
+
+                print(f"{group.program.Process.name()} muted (fader {group.fader})")
 
         # Check if key matching a fader input exists
-        elif msg.control in control_groups:
-            # print(control_groups[msg.control].fader)
-            # print(control_groups[msg.control].program)
+        elif msg.control in CONST_FADER_RANGE:
+            group = control_groups[msg.control]
 
-            # Find audio session with matching program name of input fader control
-            session = next(
-                (s for s in sessions() if s.Process and s.Process.name() == control_groups[msg.control].program), None)
-
-            # If no matching session was found i.e fader not assigned a program, end current loop
-            if not session:
+            # If fader does not have assigned program end current loop
+            if not group.program:
                 continue
 
             # Get volume control object from session
-            volume = session._ctl.QueryInterface(ISimpleAudioVolume)
+            volume = group.program._ctl.QueryInterface(ISimpleAudioVolume)
             # Convert midi value to percentage and set volume
             volume.SetMasterVolume(msg.value / 127, None)
 
-            print(f"{control_groups[msg.control].program} set to {volume.GetMasterVolume() * 100}%")
+            print(f"{group.program.Process.name()} set to {volume.GetMasterVolume() * 100}%")
 
         # After input is processed delete message to prevent unnecessary looping
         msg = None
