@@ -1,18 +1,24 @@
-import mido
 import psutil
 import win32process
-from pycaw.pycaw import AudioUtilities, ISimpleAudioVolume
 import win32gui
+from pycaw.pycaw import AudioUtilities, ISimpleAudioVolume
+from functools import partial
 import voicemeeter
 from infi.systray import SysTrayIcon
 
-from control_group import ControlGroup
 from mixer import Mixer
 
 
 def main():
     sessions = AudioUtilities.GetAllSessions
     mixer = Mixer()
+
+    # SysTrayIcon menu items
+    menu_options = ()
+    # SysTrayIcon object
+    systray = SysTrayIcon(None, "NK2Mixer", menu_options, on_quit=partial(exit_program, mixer))
+    # Start SysTray
+    systray.start()
 
     # Map physical faders to Voicemeeter faders - mappings subject to personal preference
     with voicemeeter.remote('banana', 0.0005) as vmr:
@@ -75,7 +81,8 @@ def main():
                 mixer.disable_light(group.mute)
 
         # Check for mute button press
-        elif msg.control in mixer.mute_range and msg.value and mixer.groups[msg.control - mixer.mute_fader_diff].program:
+        elif msg.control in mixer.mute_range and msg.value and mixer.groups[
+            msg.control - mixer.mute_fader_diff].program:
             group = mixer.groups[msg.control - mixer.mute_fader_diff]
 
             # Check if program is muted
@@ -150,6 +157,11 @@ def get_active_program():
     active_window = win32gui.GetForegroundWindow()
     active_pid = win32process.GetWindowThreadProcessId(active_window)[1]
     return psutil.Process(active_pid).name()
+
+
+# Callback fn for SysTrayIcon - change running value to end main loop
+def exit_program(mixer, systray):
+    mixer.running = False
 
 
 if __name__ == '__main__':
