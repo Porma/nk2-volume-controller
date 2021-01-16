@@ -4,6 +4,7 @@ import win32process
 from pycaw.pycaw import AudioUtilities, ISimpleAudioVolume
 import win32gui
 import voicemeeter
+from infi.systray import SysTrayIcon
 
 from control_group import ControlGroup
 from mixer import Mixer
@@ -21,10 +22,6 @@ def main():
             6: vmr.inputs[1],
             7: vmr.outputs[0]
         }
-
-    # Populate dict using fader control number for key
-    for i in mixer.fader_range:
-        mixer.groups[i] = ControlGroup(i)
 
     for session in sessions():
         if session.Process:

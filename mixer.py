@@ -30,6 +30,7 @@ class Mixer:
     vb_mute_range = range(52, 56)
 
     def __init__(self):
+        # Populate groups dict with control numbers from ranges
         for i in self.fader_range:
             self.groups[i] = ControlGroup(i)
 
