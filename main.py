@@ -49,6 +49,11 @@ def main():
                 # Find audio session with matching name
                 session = next(
                     (s for s in sessions() if s.Process and s.Process.name() == active_program), None)
+
+                # If audio session does not exist end current loop
+                if not session:
+                    continue
+
                 # Assign session to control group
                 group.program = session
 
